@@ -305,6 +305,7 @@ source /root/adminrc
 
 git clone https://github.com/zerovm/swift-browser.git /opt/swift-browser
 cd /opt/swift-browser
+npm install
 swift post -r '.r:*' swift-browser
 swift upload swift-browser .
 STORAGE_URL=$(swift stat -v | grep StorageURL | cut -d ' ' -f 6)
