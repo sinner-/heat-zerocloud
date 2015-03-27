@@ -1,0 +1,319 @@
+#!/usr/bin/env bash
+
+SWAUTH_SA_KEY=swauthkey
+
+echo "$private_ip zerocloud01" | tee -a /etc/hosts
+
+cat >> /etc/rsyncd.conf <<EOF
+uid = swift
+gid = swift
+log file = /var/log/rsyncd.log
+pid file = /var/run/rsyncd.pid
+address = 0.0.0.0
+[account]
+max connections = 2
+path = /srv/node
+read only = false
+lock file = /var/lock/account.lock
+[container]
+max connections = 2
+path = /srv/node
+read only = false
+lock file = /var/lock/container.lock
+[object]
+max connections = 2
+path = /srv/node
+read only = false
+lock file = /var/lock/object.lock
+EOF
+
+cat >> /root/configure_swift.py <<EOF
+import shutil
+from ConfigParser import ConfigParser
+
+
+def inject_before(some_list, item, target):
+    # make a copy
+    some_list = list(some_list)
+    for i, each in enumerate(some_list):
+        if each == target:
+            some_list.insert(i, item)
+            break
+    else:
+        raise RuntimeError("'%s' not found in pipeline" % target)
+    return some_list
+
+
+def config_add_filter(cp, filter_name, func_name, inject_b4,
+                      egg_name='zerocloud', extras=None):
+    """
+    :param cp:
+        :class:`ConfigParser.ConfigParser` object
+    :param filter_name:
+        Name of the filter. This is the name that will be used to reference the
+        filter in the pipeline configuration.
+    :param func_name:
+        Middleware function name.
+    :param inject_b4:
+        When inserting a filter into the pipeline, place the filter (indicated
+        by `filter_name`) before `inject_b4`.
+
+        If `None`, don't modify the pipeline.
+    """
+    filt = 'filter:%s' % filter_name
+    cp.add_section(filt)
+    cp.set(filt, 'use', 'egg:%(egg)s#%(func)s' % dict(egg=egg_name,
+                                                      func=func_name))
+
+    if extras is not None:
+        for k, v in extras.items():
+            cp.set(filt, k, v)
+
+    if inject_b4 is not None:
+        pipeline = cp.get('pipeline:main', 'pipeline').split()
+        pipeline = inject_before(pipeline, filter_name, inject_b4)
+        cp.set('pipeline:main', 'pipeline', value=' '.join(pipeline))
+
+
+def back_up(filename):
+    """Make a copy of ``filename`` with the a .bak extension.
+    """
+    shutil.copyfile(filename, '%s.bak' % filename)
+
+
+if __name__ == '__main__':
+    obj_server = '/etc/swift/object-server/1.conf'
+    proxy_server = '/etc/swift/proxy-server.conf'
+    cont_server = '/etc/swift/container-server/1.conf'
+    back_up(obj_server)
+    back_up(proxy_server)
+    back_up(cont_server)
+
+    # Object server:
+    cp = ConfigParser()
+    cp.read(obj_server)
+    # basic ZeroVM object server config
+    config_add_filter(
+        cp,
+        'zerocloud-object-query',
+        'object_query',
+        'object-server',
+        extras={
+            'zerovm_sysimage_devices': 'python2.7 /usr/share/zerovm/python.tar',
+            'zerovm_timeout': '30',
+        }
+    )
+    # Set verbose logging on the object server
+    cp.set('DEFAULT', 'log_level', 'DEBUG')
+    with open(obj_server, 'w') as fp:
+        cp.write(fp)
+
+    # Proxy server:
+    cp = ConfigParser()
+    cp.read(proxy_server)
+    # basic ZeroVM proxy server config
+    config_add_filter(
+        cp,
+        'zerocloud-proxy-query',
+        'proxy_query',
+        'proxy-server',
+        extras={
+            'zerovm_sysimage_devices': ('python2.7 '
+                                        '/usr/share/zerovm/python.tar'),
+            'set log_name': 'zerocloud-proxy-query',
+            'zerovm_timeout': '30',
+        }
+    )
+    # proxy server job chaining middleware
+    config_add_filter(
+        cp,
+        'zerocloud-job-chain',
+        'job_chain',
+        'zerocloud-proxy-query',
+        extras={
+            'set log_name': 'zerocloud-job-chain',
+            'chain_timeout': '60',
+        }
+    )
+    # install swauth
+    config_add_filter(
+        cp,
+        'swauth',
+        'swauth',
+        None,
+        egg_name='swauth',
+        extras={
+            'set log_name': 'swauth',
+            'super_admin_key': 'swauthkey',
+        }
+    )
+    # replace tempauth with swauth
+    pipeline = cp.get('pipeline:main', 'pipeline')
+    pipeline = pipeline.replace('tempauth', 'swauth')
+    cp.set('pipeline:main', 'pipeline', pipeline)
+    # allow account management (needed for swauth)
+    cp.set('app:proxy-server', 'allow_account_management', 'true')
+
+    with open(proxy_server, 'w') as fp:
+        cp.write(fp)
+
+    # Container server:
+    cp = ConfigParser()
+    cp.read(cont_server)
+    config_add_filter(
+        cp,
+        'zerocloud-object-query',
+        'object_query',
+        'container-server',
+        extras={
+            'zerovm_sysimage_devices': 'python2.7 /usr/share/zerovm/python.tar',
+            'zerovm_timeout': '30',
+        }
+    )
+
+    with open(cont_server, 'w') as fp:
+        cp.write(fp)
+EOF
+
+cat > $HOME/.bowerrc <<EOF
+{
+"analytics": false
+}
+EOF
+
+cat >> /root/adminrc <<EOF
+export ST_USER=adminacct:admin
+export ST_KEY=adminpass
+export ST_AUTH=http://127.0.0.1:8080/auth/v1.0
+EOF
+
+sed -i 's/nova/au/' /etc/apt/sources.list
+
+add-apt-repository ppa:zerovm-ci/zerovm-latest -y
+sed -i 's/trusty/precise/g' /etc/apt/sources.list.d/zerovm-ci-zerovm-latest-trusty.list
+
+apt-get update
+apt-get -y install python-software-properties memcached wget git libxslt1-dev python-xattr python-pip python2.7-dev xfsprogs rsync nodejs npm
+
+pip install pbr six prettytable oslo.config python-keystoneclient netaddr keystonemiddleware python-swiftclient==2.2.0
+
+groupadd swift
+useradd swift -g swift -s /sbin/nologin -d /var/run/swift
+
+mkdir /var/run/swift
+mkdir /var/cache/swift
+mkdir /etc/swift
+mkdir /usr/share/zerovm
+mkdir /etc/swift/object-server
+mkdir /etc/swift/container-server
+mkdir /etc/swift/account-server
+mkdir /srv/node
+mkdir /srv/node/disk1
+mkdir /srv/node/disk2
+mkdir /srv/node/disk3
+
+truncate -s 10G /opt/disk1
+truncate -s 10G /opt/disk2
+truncate -s 10G /opt/disk3
+
+losetup /dev/loop0 /opt/disk1
+losetup /dev/loop1 /opt/disk2
+losetup /dev/loop2 /opt/disk3
+
+parted /dev/loop0 mklabel gpt
+parted /dev/loop0 mkpart primary 0GB 10GB
+parted /dev/loop1 mklabel gpt
+parted /dev/loop1 mkpart primary 0GB 10GB
+parted /dev/loop2 mklabel gpt
+parted /dev/loop2 mkpart primary 0GB 10GB
+
+partprobe /dev/loop0
+partprobe /dev/loop1
+partprobe /dev/loop2
+
+mkfs.xfs -q /dev/loop0p1
+mkfs.xfs -q /dev/loop1p1
+mkfs.xfs -q /dev/loop2p1
+
+mount /dev/loop0p1 /srv/node/disk1
+mount /dev/loop1p1 /srv/node/disk2
+mount /dev/loop2p1 /srv/node/disk3
+
+chown -R swift:swift /var/run/swift
+chown -R swift:swift /var/cache/swift
+chown -R swift:swift /usr/share/zerovm
+chown -R swift:swift /etc/swift
+chown -R swift:swift /srv/node
+
+sed -i 's/^RSYNC_ENABLE.*/RSYNC_ENABLE=true/' /etc/default/rsync
+service rsync start
+
+git clone https://github.com/gholt/swauth.git /opt/swauth
+cd /opt/swauth
+git checkout tags/1.0.8
+python setup.py install
+cd -
+
+git clone https://github.com/openstack/swift.git -b stable/juno /opt/swift
+cd /opt/swift
+python setup.py install
+cp etc/swift.conf-sample /etc/swift/swift.conf
+cp etc/proxy-server.conf-sample /etc/swift/proxy-server.conf
+cp etc/object-server.conf-sample /etc/swift/object-server/1.conf
+cp etc/container-server.conf-sample /etc/swift/container-server/1.conf
+cp etc/account-server.conf-sample /etc/swift/account-server/1.conf
+cd -
+
+git clone https://github.com/zerovm/zerocloud/ /opt/zerocloud
+cd /opt/zerocloud
+python setup.py develop
+cd -
+
+cd /usr/share/zerovm
+wget -q http://packages.zerovm.org/zerovm-samples/python.tar
+cd -
+
+cd /etc/swift/
+swift-ring-builder container.builder create 7 3 1
+swift-ring-builder account.builder create 7 3 1
+swift-ring-builder object.builder create 7 3 1
+swift-ring-builder object.builder add z1-$private_ip:6000/disk1 100
+swift-ring-builder object.builder add z1-$private_ip:6000/disk2 100
+swift-ring-builder object.builder add z1-$private_ip:6000/disk3 100
+swift-ring-builder container.builder add z1-$private_ip:6001/disk1 100
+swift-ring-builder container.builder add z1-$private_ip:6001/disk2 100
+swift-ring-builder container.builder add z1-$private_ip:6001/disk3 100
+swift-ring-builder account.builder add z1-$private_ip:6002/disk1 100
+swift-ring-builder account.builder add z1-$private_ip:6002/disk2 100
+swift-ring-builder account.builder add z1-$private_ip:6002/disk3 100
+swift-ring-builder account.builder rebalance
+swift-ring-builder object.builder rebalance
+swift-ring-builder container.builder rebalance
+cd -
+
+python /root/configure_swift.py
+
+swift-init all start
+
+swauth-prep -K $SWAUTH_SA_KEY
+swauth-add-user -A http://127.0.0.1:8080/auth/ -K $SWAUTH_SA_KEY --admin adminacct admin adminpass
+swauth-add-user -A http://127.0.0.1:8080/auth/ -K $SWAUTH_SA_KEY demoacct demo demopass
+
+source /root/adminrc
+
+swift post testcontainer
+swift post testcontainer
+swift upload testcontainer adminrc
+swift upload testcontainer adminrc
+swift delete testcontainer
+
+git clone https://github.com/zerovm/swift-browser.git /opt/swift-browser
+cd /opt/swift-browser
+swift post -r '.r:*' swift-browser
+swift upload swift-browser .
+STORAGE_URL=$(swift stat -v | grep StorageURL | cut -d ' ' -f 6)
+echo "Swift Browser installed at:
+$STORAGE_URL/swift-browser/index.html
+User: $ST_USER
+Key: $ST_KEY" > $HOME/swift-browser.info
+cd -
