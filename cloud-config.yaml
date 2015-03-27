@@ -209,35 +209,19 @@ mkdir /etc/swift/container-server
 mkdir /etc/swift/account-server
 mkdir /srv/node
 mkdir /srv/node/disk1
-mkdir /srv/node/disk2
-mkdir /srv/node/disk3
 
 truncate -s 10G /opt/disk1
-truncate -s 10G /opt/disk2
-truncate -s 10G /opt/disk3
 
 losetup /dev/loop0 /opt/disk1
-losetup /dev/loop1 /opt/disk2
-losetup /dev/loop2 /opt/disk3
 
 parted /dev/loop0 mklabel gpt
 parted /dev/loop0 mkpart primary 0GB 10GB
-parted /dev/loop1 mklabel gpt
-parted /dev/loop1 mkpart primary 0GB 10GB
-parted /dev/loop2 mklabel gpt
-parted /dev/loop2 mkpart primary 0GB 10GB
 
 partprobe /dev/loop0
-partprobe /dev/loop1
-partprobe /dev/loop2
 
 mkfs.xfs -q /dev/loop0p1
-mkfs.xfs -q /dev/loop1p1
-mkfs.xfs -q /dev/loop2p1
 
 mount /dev/loop0p1 /srv/node/disk1
-mount /dev/loop1p1 /srv/node/disk2
-mount /dev/loop2p1 /srv/node/disk3
 
 sed -i 's/^RSYNC_ENABLE.*/RSYNC_ENABLE=true/' /etc/default/rsync
 service rsync start
@@ -268,18 +252,12 @@ wget -q http://packages.zerovm.org/zerovm-samples/python.tar
 cd -
 
 cd /etc/swift/
-swift-ring-builder container.builder create 7 3 1
-swift-ring-builder account.builder create 7 3 1
-swift-ring-builder object.builder create 7 3 1
+swift-ring-builder container.builder create 7 1 1
+swift-ring-builder account.builder create 7 1 1
+swift-ring-builder object.builder create 7 1 1
 swift-ring-builder object.builder add z1-$private_ip:6000/disk1 100
-swift-ring-builder object.builder add z1-$private_ip:6000/disk2 100
-swift-ring-builder object.builder add z1-$private_ip:6000/disk3 100
 swift-ring-builder container.builder add z1-$private_ip:6001/disk1 100
-swift-ring-builder container.builder add z1-$private_ip:6001/disk2 100
-swift-ring-builder container.builder add z1-$private_ip:6001/disk3 100
 swift-ring-builder account.builder add z1-$private_ip:6002/disk1 100
-swift-ring-builder account.builder add z1-$private_ip:6002/disk2 100
-swift-ring-builder account.builder add z1-$private_ip:6002/disk3 100
 swift-ring-builder account.builder rebalance
 swift-ring-builder object.builder rebalance
 swift-ring-builder container.builder rebalance
