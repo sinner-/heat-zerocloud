@@ -234,6 +234,7 @@ cd -
 
 git clone https://github.com/openstack/swift.git -b stable/juno /opt/swift
 cd /opt/swift
+git checkout tags/2.2.0
 python setup.py install
 cp etc/swift.conf-sample /etc/swift/swift.conf
 cp etc/proxy-server.conf-sample /etc/swift/proxy-server.conf
