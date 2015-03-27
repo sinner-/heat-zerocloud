@@ -255,9 +255,9 @@ cd /etc/swift/
 swift-ring-builder container.builder create 7 1 1
 swift-ring-builder account.builder create 7 1 1
 swift-ring-builder object.builder create 7 1 1
-swift-ring-builder object.builder add z1-$private_ip:6000/disk1 100
-swift-ring-builder container.builder add z1-$private_ip:6001/disk1 100
-swift-ring-builder account.builder add z1-$private_ip:6002/disk1 100
+swift-ring-builder object.builder add r1-z1-$private_ip:6000/disk1 100
+swift-ring-builder container.builder add r1-z1-$private_ip:6001/disk1 100
+swift-ring-builder account.builder add r1-z1-$private_ip:6002/disk1 100
 swift-ring-builder account.builder rebalance
 swift-ring-builder object.builder rebalance
 swift-ring-builder container.builder rebalance
