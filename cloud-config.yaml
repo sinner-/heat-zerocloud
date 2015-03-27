@@ -193,7 +193,7 @@ add-apt-repository ppa:zerovm-ci/zerovm-latest -y
 sed -i 's/trusty/precise/g' /etc/apt/sources.list.d/zerovm-ci-zerovm-latest-trusty.list
 
 apt-get update
-apt-get -y install python-software-properties memcached wget git libxslt1-dev python-xattr python-pip python2.7-dev xfsprogs rsync nodejs npm
+apt-get -y install python-software-properties memcached wget git libxslt1-dev python-xattr python-pip python-dev xfsprogs rsync nodejs npm zerovm
 
 pip install pbr six prettytable oslo.config python-keystoneclient netaddr keystonemiddleware python-swiftclient==2.2.0
 
@@ -238,12 +238,6 @@ mkfs.xfs -q /dev/loop2p1
 mount /dev/loop0p1 /srv/node/disk1
 mount /dev/loop1p1 /srv/node/disk2
 mount /dev/loop2p1 /srv/node/disk3
-
-chown -R swift:swift /var/run/swift
-chown -R swift:swift /var/cache/swift
-chown -R swift:swift /usr/share/zerovm
-chown -R swift:swift /etc/swift
-chown -R swift:swift /srv/node
 
 sed -i 's/^RSYNC_ENABLE.*/RSYNC_ENABLE=true/' /etc/default/rsync
 service rsync start
@@ -293,6 +287,14 @@ cd -
 
 python /root/configure_swift.py
 
+chown -R swift:swift /var/run/swift
+chown -R swift:swift /var/cache/swift
+chown -R swift:swift /usr/share/zerovm
+chown -R swift:swift /etc/swift
+chown -R swift:swift /srv/node
+chown -R swift:swift /opt/swauth
+chown -R swift:swift /opt/zerocloud
+
 swift-init all start
 
 swauth-prep -K $SWAUTH_SA_KEY
@@ -300,12 +302,6 @@ swauth-add-user -A http://127.0.0.1:8080/auth/ -K $SWAUTH_SA_KEY --admin adminac
 swauth-add-user -A http://127.0.0.1:8080/auth/ -K $SWAUTH_SA_KEY demoacct demo demopass
 
 source /root/adminrc
-
-swift post testcontainer
-swift post testcontainer
-swift upload testcontainer adminrc
-swift upload testcontainer adminrc
-swift delete testcontainer
 
 git clone https://github.com/zerovm/swift-browser.git /opt/swift-browser
 cd /opt/swift-browser
