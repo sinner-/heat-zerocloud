@@ -3,6 +3,10 @@ heat_template_version: 2013-05-23
 description: HOT file sets up OpenStack Swift-All-In-One and ZeroVM with ZeroCloud middleware and Swift-Browser
 
 parameters:
+  flavor:
+    type: string
+    default: m1.xlarge
+    description: Flavor to use (e.g. m1.small, m1.medium, m1.large)
   image:
     type: string
     default: Ubuntu 14.04
@@ -122,7 +126,7 @@ resources:
     properties:
       name: zerocloud01
       image: { get_param: image}
-      flavor: m1.xlarge
+      flavor: { get_param: flavor }
       key_name: { get_param: key_name } 
       networks:
         - port: { get_resource: zerocloud01_internal_port }
