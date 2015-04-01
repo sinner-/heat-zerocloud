@@ -131,7 +131,6 @@ resources:
         str_replace:
           template: { get_file: cloud-config.yaml }
           params:
-            $ssh_key: { get_attr: [ zerocloud_key, public_key ] }
             $private_ip: { get_attr: [ zerocloud01_internal_port, fixed_ips, 0, ip_address ] }
 
 outputs:
