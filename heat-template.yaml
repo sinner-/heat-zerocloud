@@ -136,5 +136,5 @@ resources:
 
 outputs:
   public_ip:
-    description: ZeroCloud Cluster SSH Access IP
+    description: ZeroCloud SSH Access IP
     value: { get_attr: [ zerocloud01_floatingip, floating_ip_address ] }
